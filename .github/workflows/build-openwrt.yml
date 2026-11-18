@@ -1,1 +1,88 @@
+name: Build OpenWrt IPK
 
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Makefile'
+      - 'htdocs/**'
+      - 'root/**'
+      - '.github/workflows/build-openwrt.yml'
+  pull_request:
+    paths:
+      - 'Makefile'
+      - 'htdocs/**'
+      - 'root/**'
+      - '.github/workflows/build-openwrt.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: OpenWrt 23.05.4 / aarch64_cortex-a53
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      SDK_URL: https://downloads.openwrt.org/releases/23.05.4/targets/aarch64_cortex-a53/generic/openwrt-sdk-23.05.4-aarch64_cortex-a53_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+
+    steps:
+      - name: Check out app source
+        uses: actions/checkout@v4
+
+      - name: Install SDK host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang flex bison g++ gawk gettext git \
+            libncurses5-dev libssl-dev python3 python3-setuptools \
+            rsync unzip zlib1g-dev file wget xz-utils
+
+      - name: Download OpenWrt SDK
+        run: |
+          mkdir -p "$RUNNER_TEMP/openwrt-sdk"
+          curl --fail --location --retry 3 "$SDK_URL" -o "$RUNNER_TEMP/openwrt-sdk.tar.xz"
+          tar -xJf "$RUNNER_TEMP/openwrt-sdk.tar.xz" \
+            --strip-components=1 -C "$RUNNER_TEMP/openwrt-sdk"
+
+      - name: Install OpenWrt package feeds
+        working-directory: ${{ runner.temp }}/openwrt-sdk
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Add this LuCI package to the SDK
+        run: |
+          mkdir -p "$RUNNER_TEMP/openwrt-sdk/package/luci-app-openinject"
+          rsync -a --delete --exclude='.git/' ./ \
+            "$RUNNER_TEMP/openwrt-sdk/package/luci-app-openinject/"
+
+      - name: Build IPK
+        working-directory: ${{ runner.temp }}/openwrt-sdk
+        run: |
+          make defconfig
+          make package/luci-app-openinject/compile V=s
+          mkdir -p "$RUNNER_TEMP/ipk-output"
+          find bin/packages -type f -name 'luci-app-openinject_*.ipk' \
+            -exec cp -v {} "$RUNNER_TEMP/ipk-output/" \;
+          test -n "$(find "$RUNNER_TEMP/ipk-output" -type f -name '*.ipk' -print -quit)"
+
+      - name: Upload compiled IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-openinject-openwrt-23.05.4-aarch64_cortex-a53
+          path: ${{ runner.temp }}/ipk-output/*.ipk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summarize build and runtime dependencies
+        run: |
+          {
+            echo '## Build complete'
+            echo 'The LuCI package IPK is attached to this run as an artifact.'
+            echo
+            echo 'The repository Makefile declares runtime dependencies: `openinject`, `mihomo`, and `luci-base`.'
+            echo 'This repository does not include the OpenInject core source/package, so this workflow cannot build an `openinject` IPK. Install that package separately; Mihomo must also be available from a compatible package source.'
+          } >> "$GITHUB_STEP_SUMMARY"
