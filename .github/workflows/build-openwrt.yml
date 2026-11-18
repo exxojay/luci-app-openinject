@@ -22,11 +22,11 @@ permissions:
 
 jobs:
   build:
-    name: OpenWrt 23.05.4 / aarch64_cortex-a53
+    name: OpenWrt 23.05.4 / LuCI package (all architectures)
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
-      SDK_URL: https://downloads.openwrt.org/releases/23.05.4/targets/aarch64_cortex-a53/generic/openwrt-sdk-23.05.4-aarch64_cortex-a53_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+      SDK_URL: https://downloads.openwrt.org/releases/23.05.4/targets/armsr/armv8/openwrt-sdk-23.05.4-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
 
     steps:
       - name: Check out app source
@@ -59,7 +59,7 @@ jobs:
           rsync -a --delete --exclude='.git/' ./ \
             "$RUNNER_TEMP/openwrt-sdk/package/luci-app-openinject/"
 
-      - name: Build IPK
+      - name: Build LuCI app IPK
         working-directory: ${{ runner.temp }}/openwrt-sdk
         run: |
           make defconfig
@@ -72,7 +72,7 @@ jobs:
       - name: Upload compiled IPK
         uses: actions/upload-artifact@v4
         with:
-          name: luci-app-openinject-openwrt-23.05.4-aarch64_cortex-a53
+          name: luci-app-openinject-openwrt-23.05.4-all-architectures
           path: ${{ runner.temp }}/ipk-output/*.ipk
           if-no-files-found: error
           retention-days: 30
